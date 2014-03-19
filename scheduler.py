@@ -5,6 +5,10 @@ import subprocess
 import string
 import time,sys
 import random
+#import ssh
+#from ssh import Connection
+from operator import attrgetter
+from collections import namedtuple
 
 def main():
     
@@ -23,7 +27,6 @@ def main():
     
     args = parser.parse_args()
 
-    
     if(args.all):
         #read the list of VMs
         VM_list = read_VM_list()
@@ -58,6 +61,34 @@ def read_VM_list():
     return VM_list
     
     
+def read_VM_tuple():
+    #outputs the list of VMs in the stdout
+    command_output = subprocess.Popen(["xl","list"],stdout=subprocess.PIPE)
+     
+    VM_Tuple = namedtuple("VM_Tuple","VM_name RAM")
+    VM_Tuple_list = []
+        
+    #read line by line with the "xm list" command, and create a list of VMs
+    while True:
+        line = command_output.stdout.readline()
+        if line != '':
+            #line = line.rstrip()
+            tokens = line.split()
+#            print("TOKENS0 "+tokens[0])
+#            print("TOKENS1 "+tokens[2])
+#            print("TOKENS2 "+tokens[2])
+            
+            #filtering out
+            if((tokens[0] != "Domain-0") & (tokens[0] != "Name") & (tokens[0] != "total")):
+                VM = VM_Tuple(tokens[0],float(tokens[2]))
+                #VM_Tuple_list.append([token[0],token[2])
+                VM_Tuple_list.append(VM)
+        else:
+            break
+    
+    return VM_Tuple_list
+    
+    
 #Function to migrate all the VMs
 def migrate_all(VM_list,destination,policy,ttl):
     
@@ -65,7 +96,7 @@ def migrate_all(VM_list,destination,policy,ttl):
     if(policy == 'random'):
         migrate_random(VM_list,destination,ttl)
     else:
-        migrate_smart(VM_list,destination)
+        migrate_smart(VM_list,destination,ttl)
         
     return
     
@@ -90,37 +121,60 @@ def migrate_no_ttl(VM_list,destination):
     start_time = time.time()
     
     for VM in VM_list:
-        subprocess.Popen(["xm","migrate",VM,destination,"-l"])        
+        subprocess.call(["xm","migrate",VM,destination,"-l"])        
         
     elapsed_time = time.time() - start_time
 
-    print("The Elapsed time is "+elapsed_time)
+    print("The Elapsed time is "+str(elapsed_time))
     return
 
 
 #Migrate the VMs with the TTL defined
 def migrate_ttl(VM_list,destination,ttl):    
-    print("Starting migration within a TTL of"+ttl)
+    print("Starting migration within a TTL of "+str(ttl))
     elapsed_time = 0.0
+    count_vm_migrated = 0
+    
     for VM in VM_list:
-        if(elapsed_time < ttl)
-            start_time = time.time()
-            subprocess.Popen(["xm","migrate",VM,destination,"-l"])        
-            elapsed_time_process = time.time() - start_time
-            elapsed_time += elapsed_time_process
+        start_time = time.time()
+        subprocess.call(["xm","migrate",VM,destination,"-l"])        
+        elapsed_time_process = time.time() - start_time
             
-            if(elapsed_time <= ttl)
-                print("Migrated "+VM+" within the TTL of "+ttl)
-        else
+        if(elapsed_time + elapsed_time_process <= ttl):
+            elapsed_time += elapsed_time_process
+            count_vm_migrated += 1
+            print("Migrated "+VM+" within the TTL of "+str(ttl))                
+        else:
             break
             
     
-    print("The Elapsed time is "+elapsed_time)
+    print("VMs Migrated within TTL = "+str(count_vm_migrated))
+    print("The Elapsed time to migrate within this TTL is "+str(elapsed_time))
     return
     
 #Smart Algorithm Migration    
-def migrate_smart(VM_list, destination):
-    print("SMART ALGORITHM - NOT YET DONE")
+def migrate_smart(VM_list, destination,ttl):
+    
+    #VM Tuple list
+    VM_Tuple_List = read_VM_tuple()
+    
+    #sort the tuple list
+    VM_Tuple_List = sorted(VM_Tuple_List, key=attrgetter('RAM'))
+
+    #VM tuple list
+    VM_list = []
+    
+    for VM_Tuple in VM_Tuple_List:
+        VM_list.append(VM_Tuple.VM_name)
+
+    print VM_list
+    
+    if(ttl == 0.0):
+        migrate_no_ttl(VM_list,destination)
+    else:
+        migrate_ttl(VM_list,destination,ttl)
+        
+            
     return 0
     
 def migrate_one(VM,destination):
